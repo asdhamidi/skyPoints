@@ -25,6 +25,10 @@ Component-level blueprint of everything to be built. Implements the data contrac
                               dbt seed  (country_reference, tier_reference)
                                           ▼
               stg_member_profile_aus / _ind / _usa  ──► UNION ──► stg_member_profile
+                                          │
+                                          ├──► rejected_member_records  (DLQ, incremental)
+                                          ▼
+                                stg_member_profile_valid
                                           ▼
                          dbt snapshot: snap_member_country  (SCD2 on tracked attributes)
                                           ▼
@@ -79,6 +83,8 @@ skyPoints/
 │   │   │   ├── stg_member_profile_ind.sql
 │   │   │   ├── stg_member_profile_usa.sql
 │   │   │   ├── stg_member_profile.sql
+│   │   │   ├── stg_member_profile_valid.sql
+│   │   │   ├── rejected_member_records.sql
 │   │   │   └── stg_redemptions.sql
 │   │   └── marts/
 │   │       ├── _marts__models.yml
@@ -98,7 +104,8 @@ skyPoints/
 │       ├── assert_country_code_is_valid.sql
 │       ├── assert_no_duplicate_redemption_txn.sql
 │       ├── assert_redemption_member_exists.sql
-│       └── assert_raw_field_count_matches_spec.sql
+│       ├── assert_raw_field_count_matches_spec.sql
+│       └── assert_no_member_rows_lost_to_dlq_split.sql
 ├── airflow/
 │   ├── Dockerfile
 │   ├── docker-compose.yaml
@@ -133,7 +140,10 @@ skyPoints/
 | `stg_member_profile_aus.sql` | dbt model | Harmonizes `RAW.AUS_MEMBER_PROFILE` into the canonical schema; `TRY_TO_DATE` handling for `"NULL"`/invalid strings | `RAW.AUS_MEMBER_PROFILE` | canonical-shape rows, `country_code='AUS'` |
 | `stg_member_profile_ind.sql` | dbt model | Harmonizes `RAW.IND_MEMBER_PROFILE`; parses `M/D/YYYY`; maps `Individual or Corporate` → `membership_type` | `RAW.IND_MEMBER_PROFILE` | canonical-shape rows, `country_code='IND'` |
 | `stg_member_profile_usa.sql` | dbt model | Harmonizes `RAW.USA_MEMBER_PROFILE`; parses concatenated dates deterministically only (via `parse_usa_date`), quarantines ambiguous ones to `NULL`; `dob` always `NULL` | `RAW.USA_MEMBER_PROFILE` | canonical-shape rows, `country_code='USA'` |
-| `stg_member_profile.sql` | dbt model | `UNION ALL` of the three source-specific models | the three models above | `STAGING.MEMBER_PROFILE` |
+| `stg_member_profile.sql` | dbt model | `UNION ALL` of the three source-specific models, pre-validation; still contains rejected rows and `*_raw` diagnostic columns | the three models above | `STAGING.MEMBER_PROFILE` |
+| `stg_member_profile_valid.sql` | dbt model | Mandatory-field gate (docs/01 §10) — canonical columns only, rejected rows excluded; everything downstream reads this, not `stg_member_profile` | `stg_member_profile` | `STAGING.STG_MEMBER_PROFILE_VALID` |
+| `rejected_member_records.sql` | dbt model (incremental) | Dead-letter queue — the inverse of the gate above, with a `rejection_reason` explaining which mandatory field failed and, for `enrollment_date`, the raw value that didn't parse | `stg_member_profile` | `STAGING.REJECTED_MEMBER_RECORDS` |
+| `assert_no_member_rows_lost_to_dlq_split.sql` | dbt singular test | `count(stg_member_profile) = count(valid) + count(rejected)` for the latest `feed_date` — catches a row silently dropped or duplicated by the split | staging models | pass/fail |
 | `extract_feed_date.sql` (macro) | dbt macro | Extracts the business `feed_date` from a source file name (e.g. `aus_member_20240115.csv`) | `source_file_name` | `feed_date` |
 | `parse_usa_date.sql` (macro) | dbt macro | Parses USA's concatenated digit-string dates; resolves to `NULL` (not a guess) when two calendar-valid splits exist | raw digit string | `DATE` or `NULL` |
 | `_staging__models.yml` | dbt schema tests | `not_null`/`unique` on `member_key`; `not_null` on `member_id`, `member_name`, `enrollment_date`, `country_code`, `age` range; `not_null` on `stg_redemptions.txn_id`/`member_id` | staging models | pass/fail |
@@ -172,7 +182,7 @@ skyPoints/
 | `dbt_snapshot` | `BashOperator` | `dbt_run_staging` | run `snap_member_country` — reads `stg_member_profile`, so must run after it exists |
 | `dbt_run_marts` | `BashOperator` | `dbt_snapshot` | build `int_member_profile_final`, country tables, `redemptions` |
 | `dbt_test` | `BashOperator` | `dbt_run_marts` | run the full test suite |
-| `publish_run_summary` | `PythonOperator` | `dbt_test` | log row counts per country table and test pass/fail summary |
+| `publish_run_summary` | `PythonOperator` | `dbt_test` | log row counts per country table, redemption match-status counts, and DLQ rejection counts by reason for the latest `feed_date` |
 
 Idempotency: Snowflake's `COPY INTO` tracks load history per file name and skips a file already loaded; the snapshot only inserts a new row when a tracked attribute (`tier_code`, `last_flight_date`, `is_active`) actually changes — not on `country_code`, which is fixed by construction (`docs/01` §3, §7). Reruns of the same DAG run are therefore safe without extra bookkeeping.
 
@@ -202,5 +212,5 @@ Idempotency: Snowflake's `COPY INTO` tracks load history per file name and skips
 | 2 — Staging load with Age/Stale_Member | `calculate_age`, `is_stale_member` macros, `stg_member_profile.sql` |
 | 3 — Country split with "latest record wins" | `snap_member_country` snapshot, `int_member_profile_final`, `generate_country_tables` macro |
 | 4 — JSON flatten + join | `stg_redemptions.sql`, `redemptions.sql` |
-| 5 — Data validations | `tests/singular/*.sql`, schema tests in `_staging__sources.yml` |
+| 5 — Data validations | `tests/singular/*.sql`, schema tests in `_staging__sources.yml`, `rejected_member_records` DLQ (docs/01 §10) |
 | 6 — Live demonstration | `demo/generate_sample_feed.py`, `demo/DEMO_RUNBOOK.md`, Airflow UI run against Snowflake |

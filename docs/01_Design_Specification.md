@@ -75,7 +75,7 @@ DDL: `setup/raw_tables.sql`.
 `AUS.xlsx` is converted to CSV ahead of staging — Snowflake `COPY INTO` has no native Excel file format, so an Excel→CSV conversion step is a required pipeline component (see `03_Technical_Build_Plan.md` §3).
 
 **STAGING** — one harmonization model per source, mapping source columns to the canonical schema and computing `member_key`/`country_code`/derived columns, unioned into a single canonical model:
-`stg_member_profile_aus`, `stg_member_profile_ind`, `stg_member_profile_usa` → `stg_member_profile` (UNION ALL). Redemptions: `stg_redemptions` (flattened).
+`stg_member_profile_aus`, `stg_member_profile_ind`, `stg_member_profile_usa` → `stg_member_profile` (UNION ALL, still pre-validation) → `stg_member_profile_valid` (mandatory-field gate; everything downstream is built on this, not `stg_member_profile`) with `rejected_member_records` as its DLQ counterpart (§10). Redemptions: `stg_redemptions` (flattened).
 
 **MARTS** — one physical table per country, plus one global redemptions table:
 `MARTS.TABLE_AUS`, `MARTS.TABLE_IND`, `MARTS.TABLE_USA`, …, `MARTS.REDEMPTIONS`.
@@ -115,10 +115,10 @@ Raw JSON lands as one row per source document, `payload` as `VARIANT`. `stg_rede
 
 | Rule | Applies to | Failure action |
 |---|---|---|
-| `not_null` | `member_name`, `member_id`, `enrollment_date` | reject row, log |
+| `not_null` | `member_name`, `member_id`, `enrollment_date` | excluded from `stg_member_profile_valid`, routed to the DLQ (§10) |
 | `unique` | `member_key` (not `member_name`) | reject duplicate, log |
 | `country_code` must exist in `country_reference` seed | all member rows | reject row, log |
-| ambiguous date | `USA` rows only (§4) | quarantine, never guess |
+| ambiguous date | `USA` rows only (§4) | resolves to `NULL`; if the affected field is `enrollment_date` (mandatory), the row is routed to the DLQ (§10) same as any other mandatory-field failure — never guessed |
 | `txn_id` unique | redemptions | reject duplicate, log |
 | `member_id` referential integrity | redemptions → member profile | classify as resolved (exactly one country matches) / orphan (none match) / ambiguous (more than one matches) — log orphan and ambiguous, never guess a country for an ambiguous match (§7) |
 | raw field count matches source's expected column count | all raw ingestion | `ERROR_ON_COLUMN_COUNT_MISMATCH = TRUE` on `CSV_FORMAT` rejects the load outright (`setup/snowflake_bootstrap.sql`); `assert_raw_field_count_matches_spec` is the defense-in-depth check for anything that loads with the right count but blank/malformed content |
@@ -133,3 +133,20 @@ Raw JSON lands as one row per source document, `payload` as `VARIANT`. `stg_rede
 - The flat-file DOB format referenced in the assessment brief (`MMDDYYYY` vs. `DDMMYYYY`) is assumed `MMDDYYYY`, unconfirmed.
 - The country set is assumed fixed to `seeds/country_reference.csv`; a new country requires a seed update, not a code change.
 - Each per-country source is assumed to deliver a full daily snapshot of its members, not a delta; if any source instead delivers only changed rows, the staging de-duplication logic in §6.4 must be revised to merge against prior state rather than replace it.
+
+---
+
+## 10. Dead Letter Queue
+
+A member row failing a mandatory-field check (`member_name`, `member_id`, or `enrollment_date` null — including an `enrollment_date` that failed to parse, e.g. AUS's invalid `"2021-13-13"`) is excluded from the pipeline's main flow rather than propagating a silent `NULL` into a column the rest of the design treats as guaranteed non-null.
+
+**Split:**
+- `stg_member_profile` — the union of the three per-source models, pre-validation; still contains rejected rows and carries `dob_raw`/`enrollment_date_raw`/`last_flight_date_raw` passthrough columns (the original unparsed string, for explaining a rejection). Nothing downstream reads this model directly.
+- `stg_member_profile_valid` — `stg_member_profile` filtered to rows with all three mandatory fields present, canonical columns only (no `*_raw`). The snapshot, and everything built on it, reads this model.
+- `rejected_member_records` — the DLQ. Same source rows, inverse filter, plus a `rejection_reason` column (`MISSING_MEMBER_NAME`, `MISSING_MEMBER_ID`, or `INVALID_ENROLLMENT_DATE: raw value was '<value>'`). Materialized incremental and append-only: a source resending the same bad row on a later day rejects again as its own dated record, rather than being collapsed into one — so whether a defect is still happening or was fixed stays visible.
+
+**Guarantee:** `count(stg_member_profile) = count(stg_member_profile_valid) + count(rejected_member_records)` for any given `feed_date`, checked by `assert_no_member_rows_lost_to_dlq_split`.
+
+**Scope:** only the three mandatory fields trigger a DLQ entry. An optional field (`dob`, `last_flight_date`) failing to parse — including a genuinely ambiguous USA date — still resolves to `NULL` and the row still flows through normally; that was always the correct behavior for an optional field and remains unchanged. The DLQ only exists for the case where a `NULL` would otherwise silently violate a mandatory-field guarantee the rest of the design depends on.
+
+**Observability:** `publish_run_summary` (`airflow/scripts/snowflake_tasks.py`) logs a count per `rejection_reason` category for the latest `feed_date` alongside the existing per-country row counts and redemption match-status counts.

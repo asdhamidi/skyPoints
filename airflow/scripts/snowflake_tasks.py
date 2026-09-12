@@ -206,5 +206,14 @@ def publish_run_summary() -> None:
         )
         for status, count in cur.fetchall():
             print(f"redemptions.match_status={status}: {count}")
+
+        cur.execute("""
+            SELECT SPLIT_PART(rejection_reason, ':', 1) AS reason_category, COUNT(*)
+            FROM SKYPOINTS.STAGING.rejected_member_records
+            WHERE feed_date = (SELECT MAX(feed_date) FROM SKYPOINTS.STAGING.rejected_member_records)
+            GROUP BY 1
+        """)
+        for reason_category, count in cur.fetchall():
+            print(f"rejected_member_records.{reason_category}: {count}")
     finally:
         conn.close()

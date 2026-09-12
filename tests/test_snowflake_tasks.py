@@ -226,6 +226,7 @@ class TestPublishRunSummary:
         mock_cur.fetchall.side_effect = [
             [("AUS",), ("IND",), ("USA",)],
             [("RESOLVED", 1), ("AMBIGUOUS", 1), ("ORPHAN", 1)],
+            [("INVALID_ENROLLMENT_DATE", 2), ("MISSING_MEMBER_NAME", 1)],
         ]
         mock_cur.fetchone.return_value = (3,)
         mock_conn = MagicMock()
@@ -235,4 +236,6 @@ class TestPublishRunSummary:
         tasks.publish_run_summary()
 
         mock_get_conn.assert_called_once_with(role="SKYPOINTS_TRANSFORMER", warehouse="TRANSFORM_WH")
+        executed = [c.args[0] for c in mock_cur.execute.call_args_list]
+        assert any("rejected_member_records" in s for s in executed)
         mock_conn.close.assert_called_once()

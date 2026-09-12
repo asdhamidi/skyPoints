@@ -19,6 +19,6 @@
     )
 }}
 
-select * from {{ ref('stg_member_profile') }}
+select * from {{ ref('stg_member_profile_valid') }}
 
 {% endsnapshot %}

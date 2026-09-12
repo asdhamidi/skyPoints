@@ -5,6 +5,11 @@
   no delimiter; parse_usa_date (macros/parse_usa_date.sql) parses only when
   the digit count and calendar validity force a single unique split, and
   returns NULL — not a guess — for a genuinely ambiguous value (docs/01 §4).
+
+  The *_raw columns carry the original unparsed string through so a failed
+  parse can be explained in the DLQ (rejected_member_records.sql) rather than
+  just showing up as an unexplained NULL — see docs/01 §10. dob_raw is always
+  NULL: USA.csv never carries a DOB value at all, so there is nothing to show.
 #}
 
 with source as (
@@ -31,7 +36,10 @@ renamed as (
         cast(null as varchar)                               as membership_type,
         'USA'                                                as source_system,
         {{ extract_feed_date('source_file_name') }}         as feed_date,
-        load_ts                                             as load_ts
+        load_ts                                             as load_ts,
+        cast(null as varchar)                               as dob_raw,
+        enrollment_date                                     as enrollment_date_raw,
+        flight_date                                         as last_flight_date_raw
     from source
 
 )

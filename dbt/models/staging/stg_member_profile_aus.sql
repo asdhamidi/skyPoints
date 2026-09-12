@@ -9,6 +9,10 @@
   real datetime cells. The literal string "NULL" and the invalid string
   "2021-13-13" (docs/01 §2, §4) both fail this parse and resolve to NULL via
   TRY_TO_DATE, rather than erroring or being silently coerced.
+
+  The *_raw columns carry the original unparsed string through so a failed
+  parse can be explained in the DLQ (rejected_member_records.sql) rather than
+  just showing up as an unexplained NULL — see docs/01 §10.
 #}
 
 with source as (
@@ -35,7 +39,10 @@ renamed as (
         cast(null as varchar)                             as membership_type,
         'AUS'                                              as source_system,
         {{ extract_feed_date('source_file_name') }}       as feed_date,
-        load_ts                                           as load_ts
+        load_ts                                           as load_ts,
+        date_of_birth                                     as dob_raw,
+        date_of_enrollment                                as enrollment_date_raw,
+        date_of_flight                                    as last_flight_date_raw
     from source
 
 )
