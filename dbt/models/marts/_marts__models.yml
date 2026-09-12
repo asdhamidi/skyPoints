@@ -1,0 +1,18 @@
+version: 2
+
+models:
+  - name: int_member_profile_final
+    description: >
+      Current-attribute resolution — one row per member_key, the currently-open
+      snapshot version (docs/01_Design_Specification.md §6.4).
+    columns:
+      - name: member_key
+        tests:
+          - not_null
+          - unique
+
+  - name: generate_country_tables
+    description: >
+      Thin wrapper model that triggers the generate_country_tables macro as a
+      side effect of `dbt run --select marts` (docs/01 §6.5). Its own output is
+      just an audit row, not the per-country data itself.

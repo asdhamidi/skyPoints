@@ -80,6 +80,7 @@ skyPoints/
 │   │   │   ├── stg_member_profile.sql
 │   │   │   └── stg_redemptions.sql
 │   │   └── marts/
+│   │       ├── _marts__models.yml
 │   │       ├── int_member_profile_final.sql
 │   │       ├── generate_country_tables.sql
 │   │       └── redemptions.sql
@@ -135,9 +136,10 @@ skyPoints/
 | `parse_usa_date.sql` (macro) | dbt macro | Parses USA's concatenated digit-string dates; resolves to `NULL` (not a guess) when two calendar-valid splits exist | raw digit string | `DATE` or `NULL` |
 | `_staging__models.yml` | dbt schema tests | `not_null`/`unique` on `member_key`; `not_null` on `member_id`, `member_name`, `enrollment_date`, `country_code` | staging models | pass/fail |
 | `stg_redemptions.sql` | dbt model | Flattens `RAW.REDEMPTION_FEED.payload:redemptions` via `LATERAL FLATTEN` | `RAW.REDEMPTION_FEED` | `STAGING.REDEMPTIONS` |
-| `snap_member_country.sql` | dbt snapshot | SCD2 history of tracked attributes (`tier_code`, `last_flight_date`, `is_active`) per `member_key` — not `country_code`, which is fixed by construction (see `docs/01` §3, §7) | `STAGING.MEMBER_PROFILE` | `SNAPSHOTS.SNAP_MEMBER_COUNTRY` |
-| `int_member_profile_final.sql` | dbt model | Current-country resolution: snapshot rows where `dbt_valid_to IS NULL` | snapshot | one current row per `member_key` |
-| `generate_country_tables.sql` (macro) | dbt macro | Loops `country_reference`, issues one `CREATE OR REPLACE TABLE MARTS.TABLE_<COUNTRY>` per row | `int_member_profile_final`, `country_reference` | `MARTS.TABLE_<COUNTRY>` per country |
+| `snap_member_country.sql` | dbt snapshot | SCD2 history of tracked attributes (`tier_code`, `last_flight_date`, `is_active`) per `member_key` — not `country_code`, which is fixed by construction (see `docs/01` §3, §7). Targets the `STAGING` schema (not a separate `SNAPSHOTS` schema — none is provisioned; same simplification as the seeds-schema fix in Phase 3) | `stg_member_profile` | `STAGING.SNAP_MEMBER_COUNTRY` |
+| `int_member_profile_final.sql` | dbt model | Current-attribute resolution — snapshot rows where `dbt_valid_to IS NULL` | `STAGING.SNAP_MEMBER_COUNTRY` | `MARTS.INT_MEMBER_PROFILE_FINAL` |
+| `generate_country_tables.sql` (model) | dbt model | Thin wrapper that invokes the `generate_country_tables` macro as a side effect of `dbt run --select marts`; own output is an audit row only | `int_member_profile_final`, `country_reference` | `MARTS.TABLE_<COUNTRY>` per country + an audit row |
+| `_marts__models.yml` | dbt schema tests | `not_null`/`unique` on `int_member_profile_final.member_key` | marts models | pass/fail |
 | `redemptions.sql` | dbt model | Joins `stg_redemptions` to `int_member_profile_final` to attach `country_code`; global (not split by country) | both models above | `MARTS.REDEMPTIONS` |
 | `calculate_age.sql` (macro) | dbt macro | Age calculation per design spec §6.1 | `dob`, `feed_date` | `age` |
 | `is_stale_member.sql` (macro) | dbt macro | Stale-member flag per design spec §6.2 | `last_flight_date`, `feed_date` | `stale_member_flag` |
