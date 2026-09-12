@@ -13,6 +13,7 @@ Expected public API (demo/generate_sample_feed.py):
     build_redemption_payloads(run_date: date) -> list[dict]
     generate(run_date: date, out_dir: Path) -> dict[str, Path]
 """
+import csv
 from datetime import date
 
 # Deliberately a plain import, not pytest.importorskip: until demo/generate_sample_feed.py
@@ -203,3 +204,63 @@ class TestGenerate:
             "expected at least one member_key (same source ID, same country) "
             "whose TierCode differs between the two run dates"
         )
+
+
+class TestBulkGeneration:
+    """bulk_count adds realistic, deterministic volume on top of the golden
+    edge-case rows above — it never replaces or reorders them, so every
+    existing golden-row assertion in this file keeps passing unchanged with
+    the default bulk_count=0. See docs/03 for why 250,000/source is the CLI
+    default (production-scale demo volume) while tests use small counts."""
+
+    def test_bulk_count_appends_without_disturbing_golden_rows(self):
+        golden = generate_sample_feed.build_aus_rows(RUN_DATE_1)
+        with_bulk = generate_sample_feed.build_aus_rows(RUN_DATE_1, bulk_count=5)
+        assert with_bulk[: len(golden)] == golden
+        assert len(with_bulk) == len(golden) + 5
+
+    def test_bulk_ids_are_disjoint_across_sources(self):
+        """AUS/IND/USA bulk IDs live in separate numeric ranges specifically so
+        a bulk redemption can resolve to exactly one country by construction —
+        unlike the golden 1-4 range, which deliberately collides across all
+        three sources to reproduce the real files (docs/01 §3, §7)."""
+        aus_ids = {r["Unique ID"] for r in generate_sample_feed.build_aus_rows(RUN_DATE_1, bulk_count=10)[3:]}
+        ind_ids = {r["ID"] for r in generate_sample_feed.build_ind_rows(RUN_DATE_1, bulk_count=10)[4:]}
+        usa_ids = {r["ID"] for r in generate_sample_feed.build_usa_rows(RUN_DATE_1, bulk_count=10)[3:]}
+        assert not (aus_ids & ind_ids)
+        assert not (aus_ids & usa_ids)
+        assert not (ind_ids & usa_ids)
+
+    def test_bulk_usa_dates_are_never_ambiguous(self):
+        """Bulk data is meant to exercise volume, not the ambiguity-quarantine
+        path — that's what the golden John row already covers on its own."""
+        rows = generate_sample_feed.build_usa_rows(RUN_DATE_1, bulk_count=50)
+        bulk_rows = rows[3:]
+        dates = [r["EnrollmentDate"] for r in bulk_rows] + [r["FlightDate"] for r in bulk_rows]
+        assert not any(_is_ambiguous_usa_date(d) for d in dates)
+
+    def test_bulk_generation_is_deterministic(self):
+        rows_a = generate_sample_feed.build_ind_rows(RUN_DATE_1, bulk_count=20)
+        rows_b = generate_sample_feed.build_ind_rows(RUN_DATE_1, bulk_count=20)
+        assert rows_a == rows_b
+
+    def test_bulk_redemptions_resolve_to_exactly_one_country(self):
+        bulk_count = 20
+        aus_ids = {str(r["Unique ID"]) for r in generate_sample_feed.build_aus_rows(RUN_DATE_1, bulk_count)}
+        ind_ids = {str(r["ID"]) for r in generate_sample_feed.build_ind_rows(RUN_DATE_1, bulk_count)}
+        usa_ids = {str(r["ID"]) for r in generate_sample_feed.build_usa_rows(RUN_DATE_1, bulk_count)}
+        payloads = generate_sample_feed.build_redemption_payloads(RUN_DATE_1, bulk_count)
+        bulk_payloads = payloads[3:]  # the first 3 are the golden resolved/ambiguous/orphan cases
+        assert len(bulk_payloads) == bulk_count
+        for p in bulk_payloads:
+            match_count = sum(p["member_id"] in ids for ids in (aus_ids, ind_ids, usa_ids))
+            assert match_count == 1, f"member_id {p['member_id']} should resolve to exactly one country"
+
+    def test_default_bulk_record_count_is_250000(self):
+        assert generate_sample_feed.DEFAULT_BULK_RECORD_COUNT == 250_000
+
+    def test_generate_wires_bulk_count_through_to_every_file(self, tmp_path):
+        paths = generate_sample_feed.generate(RUN_DATE_1, tmp_path, bulk_count=10)
+        with open(paths["ind"], newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        assert len(rows) == 4 + 10  # 4 golden IND rows + 10 bulk
