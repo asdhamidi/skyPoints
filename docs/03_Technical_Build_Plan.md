@@ -59,7 +59,8 @@ skyPoints/
 ├── requirements-dev.txt
 ├── tests/
 │   ├── test_generate_sample_feed.py
-│   └── test_convert_aus_xlsx_to_csv.py
+│   ├── test_convert_aus_xlsx_to_csv.py
+│   └── test_snowflake_tasks.py
 ├── demo/
 │   ├── generate_sample_feed.py
 │   └── DEMO_RUNBOOK.md
@@ -104,7 +105,8 @@ skyPoints/
 │   ├── requirements.txt
 │   ├── .env.example
 │   ├── scripts/
-│   │   └── convert_aus_xlsx_to_csv.py
+│   │   ├── convert_aus_xlsx_to_csv.py
+│   │   └── snowflake_tasks.py
 │   └── dags/
 │       └── skypoints_daily_pipeline.py
 ├── .github/workflows/ci.yml
@@ -145,7 +147,8 @@ skyPoints/
 | `calculate_age.sql` (macro) | dbt macro | Age calculation per design spec §6.1 | `dob`, `feed_date` | `age` |
 | `is_stale_member.sql` (macro) | dbt macro | Stale-member flag per design spec §6.2 | `last_flight_date`, `feed_date` | `stale_member_flag` |
 | `tests/singular/*.sql` | dbt tests | One test per validation rule in design spec §8 | staging/marts models | pass/fail, logged |
-| `skypoints_daily_pipeline.py` | Airflow DAG | Orchestrates the full sequence daily | landing files | populated marts tables, test results |
+| `snowflake_tasks.py` | Python module | Task business logic (connection handling, SQL construction, per-source staging, run summary) extracted from the DAG file so it's unit-testable without Airflow importable — see `tests/test_snowflake_tasks.py` | — | — |
+| `skypoints_daily_pipeline.py` | Airflow DAG | Wires `snowflake_tasks` functions into tasks and dependencies; no business logic of its own | landing files | populated marts tables, test results |
 | `Dockerfile` / `docker-compose.yaml` | Deployment | Airflow (`LocalExecutor`) + isolated dbt venv | — | running Airflow stack |
 | `.github/workflows/ci.yml` | CI | `dbt build`/`test` on DuckDB target + DAG-integrity check | every push | pass/fail check |
 | `Makefile` | Dev entrypoint | `bootstrap`, `up`, `down`, `demo`, `dbt-fast` targets | — | — |
