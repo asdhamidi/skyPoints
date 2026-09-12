@@ -26,7 +26,7 @@ Component-level blueprint of everything to be built. Implements the data contrac
                                           ▼
               stg_member_profile_aus / _ind / _usa  ──► UNION ──► stg_member_profile
                                           ▼
-                         dbt snapshot: snap_member_country  (SCD2 on country_code)
+                         dbt snapshot: snap_member_country  (SCD2 on tracked attributes)
                                           ▼
                               int_member_profile_final
                                           ▼
@@ -117,7 +117,7 @@ skyPoints/
 | `stg_member_profile_usa.sql` | dbt model | Harmonizes `RAW.USA_MEMBER_PROFILE`; parses concatenated dates deterministically only, quarantines ambiguous ones; `dob` always `NULL` | `RAW.USA_MEMBER_PROFILE` | canonical-shape rows, `country_code='USA'` |
 | `stg_member_profile.sql` | dbt model | `UNION ALL` of the three source-specific models | the three models above | `STAGING.MEMBER_PROFILE` |
 | `stg_redemptions.sql` | dbt model | Flattens `RAW.REDEMPTION_FEED.payload:redemptions` via `LATERAL FLATTEN` | `RAW.REDEMPTION_FEED` | `STAGING.REDEMPTIONS` |
-| `snap_member_country.sql` | dbt snapshot | SCD2 history of `country_code` per `member_key` | `STAGING.MEMBER_PROFILE` | `SNAPSHOTS.SNAP_MEMBER_COUNTRY` |
+| `snap_member_country.sql` | dbt snapshot | SCD2 history of tracked attributes (`tier_code`, `last_flight_date`, `is_active`) per `member_key` — not `country_code`, which is fixed by construction (see `docs/01` §3, §7) | `STAGING.MEMBER_PROFILE` | `SNAPSHOTS.SNAP_MEMBER_COUNTRY` |
 | `int_member_profile_final.sql` | dbt model | Current-country resolution: snapshot rows where `dbt_valid_to IS NULL` | snapshot | one current row per `member_key` |
 | `generate_country_tables.sql` (macro) | dbt macro | Loops `country_reference`, issues one `CREATE OR REPLACE TABLE MARTS.TABLE_<COUNTRY>` per row | `int_member_profile_final`, `country_reference` | `MARTS.TABLE_<COUNTRY>` per country |
 | `redemptions.sql` | dbt model | Joins `stg_redemptions` to `int_member_profile_final` to attach `country_code`; global (not split by country) | both models above | `MARTS.REDEMPTIONS` |
@@ -160,7 +160,7 @@ Idempotency: Snowflake's `COPY INTO` tracks load history per file name and skips
 | 2 — Fixtures + raw | `generate_sample_feed.py`, `convert_aus_xlsx_to_csv.py`, RAW tables | a generated fixture set loads into all four RAW tables |
 | 3 — Harmonization | `stg_member_profile_aus/_ind/_usa`, `stg_member_profile` | union produces one canonical-shape row per source member, correct `member_key`/`country_code` |
 | 4 — Derived columns | `calculate_age`, `is_stale_member` macros | Age/Stale_Member correct against fixtures with known DOB/flight dates, including `NULL`-DOB (USA) rows |
-| 5 — Country history + split | `snap_member_country`, `int_member_profile_final`, `generate_country_tables` | a member moved between two fixture run dates ends up only in the new country's table; snapshot shows both country periods |
+| 5 — Attribute history + country split | `snap_member_country`, `int_member_profile_final`, `generate_country_tables` | a member's tracked attribute (e.g. `tier_code`) changed between two fixture run dates produces two snapshot versions for the same `member_key`; a genuine country change (a new `member_key` in a different source) lands only in the new country's table, per the acknowledged non-linkage limitation in `docs/01` §3 |
 | 6 — Redemptions | `stg_redemptions`, `redemptions.sql` | flattened row count matches fixture array lengths; join resolves `country_code` |
 | 7 — Validation | `tests/singular/*.sql`, schema tests | every fixture-injected defect (ID collisions, ambiguous USA dates, invalid AUS dates, bad country codes, duplicate txn) is caught, none silently passes |
 | 8 — Orchestration | `skypoints_daily_pipeline.py` | DAG runs the full sequence end to end against a fixture day |

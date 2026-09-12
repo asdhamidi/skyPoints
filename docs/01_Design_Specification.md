@@ -87,9 +87,9 @@ Every date is parsed with an explicit, source-specific format mask. No format au
 
 **6.2 Stale_Member_Flag** — `DATEDIFF(day, last_flight_date, feed_date) > 90`; `NULL` where `last_flight_date` is `NULL`.
 
-**6.3 Country-move tracking** — a dbt snapshot over `stg_member_profile`, keyed on `member_key`, strategy `check` on `country_code`. Produces `dbt_valid_from`/`dbt_valid_to` per country assignment automatically.
+**6.3 Attribute history tracking** — a dbt snapshot over `stg_member_profile`, keyed on `member_key`, strategy `check` on the non-key attributes (`tier_code`, `last_flight_date`, `is_active`, …). Produces `dbt_valid_from`/`dbt_valid_to` per attribute version automatically. `country_code` is part of `member_key` itself (§3), so it is never a tracked attribute here — a country change cannot appear as a new version of an existing `member_key`; it can only appear as an entirely new, uncorrelated `member_key`, per the limitation in §3.
 
-**6.4 Current-country resolution** — `int_member_profile_final` selects the snapshot row per `member_key` where `dbt_valid_to IS NULL`: the single source of truth for "which country table this member belongs to right now."
+**6.4 Current-attribute resolution** — `int_member_profile_final` selects the snapshot row per `member_key` where `dbt_valid_to IS NULL`: the single source of truth for a member's current tier/flight-date/status. Which physical country table a `member_key` belongs to is fixed at the point the key is created (§3), not something the snapshot resolves.
 
 **6.5 Country table generation** — one `CREATE OR REPLACE TABLE MARTS.TABLE_<COUNTRY> AS SELECT * FROM int_member_profile_final WHERE country_code = '<code>'` per row of `seeds/country_reference.csv`, issued by a single macro loop. Adding a country is a seed-file edit, not a new model.
 
