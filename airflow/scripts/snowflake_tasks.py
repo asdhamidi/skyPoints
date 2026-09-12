@@ -201,12 +201,6 @@ def publish_run_summary() -> None:
             cur.execute(f"SELECT COUNT(*) FROM SKYPOINTS.MARTS.TABLE_{country}")
             print(f"MARTS.TABLE_{country}: {cur.fetchone()[0]} rows")
 
-        cur.execute(
-            "SELECT match_status, COUNT(*) FROM SKYPOINTS.MARTS.REDEMPTIONS GROUP BY match_status"
-        )
-        for status, count in cur.fetchall():
-            print(f"redemptions.match_status={status}: {count}")
-
         cur.execute("""
             SELECT SPLIT_PART(rejection_reason, ':', 1) AS reason_category, COUNT(*)
             FROM SKYPOINTS.STAGING.rejected_member_records
