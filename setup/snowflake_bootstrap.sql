@@ -29,11 +29,17 @@ CREATE ROLE IF NOT EXISTS SKYPOINTS_TRANSFORMER;
 -- NULL_IF includes the literal string 'NULL' — AUS.xlsx (once converted to CSV) carries a
 -- literal "NULL" text value in at least one DOB cell; this treats it as a true null on load
 -- rather than a four-character string. See docs/01_Design_Specification.md §4.
+-- ERROR_ON_COLUMN_COUNT_MISMATCH is Snowflake's default (TRUE) but is set explicitly here,
+-- not left implicit: a row with more or fewer fields than the target table expects fails
+-- the load rather than silently misaligning columns — directly answering the "field spec
+-- says 11 columns, the sample file only has 10" mismatch catalogued in
+-- docs/05_Source_Data_Analysis.md §3.
 CREATE FILE FORMAT IF NOT EXISTS SKYPOINTS.RAW.CSV_FORMAT
   TYPE = CSV
   SKIP_HEADER = 1
   FIELD_OPTIONALLY_ENCLOSED_BY = '"'
-  NULL_IF = ('', 'NULL');
+  NULL_IF = ('', 'NULL')
+  ERROR_ON_COLUMN_COUNT_MISMATCH = TRUE;
 
 CREATE FILE FORMAT IF NOT EXISTS SKYPOINTS.RAW.JSON_FORMAT
   TYPE = JSON;

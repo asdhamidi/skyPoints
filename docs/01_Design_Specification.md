@@ -121,7 +121,7 @@ Raw JSON lands as one row per source document, `payload` as `VARIANT`. `stg_rede
 | ambiguous date | `USA` rows only (§4) | quarantine, never guess |
 | `txn_id` unique | redemptions | reject duplicate, log |
 | `member_id` referential integrity | redemptions → member profile | classify as resolved (exactly one country matches) / orphan (none match) / ambiguous (more than one matches) — log orphan and ambiguous, never guess a country for an ambiguous match (§7) |
-| raw field count matches source's expected column count | all raw ingestion | reject file / alert |
+| raw field count matches source's expected column count | all raw ingestion | `ERROR_ON_COLUMN_COUNT_MISMATCH = TRUE` on `CSV_FORMAT` rejects the load outright (`setup/snowflake_bootstrap.sql`); `assert_raw_field_count_matches_spec` is the defense-in-depth check for anything that loads with the right count but blank/malformed content |
 | `post_code` type | all sources | stored as VARCHAR; INT is never used |
 
 ---
