@@ -92,15 +92,30 @@ GRANT USAGE ON WAREHOUSE TRANSFORM_WH TO ROLE SKYPOINTS_TRANSFORMER;
 -- `snowflake` target (as SKYPOINTS_TRANSFORMER — dbt/profiles/profiles.yml.example).
 -- Holding both roles on one user keeps one credential set in .env rather than two;
 -- each caller picks its role explicitly per connection, not via a fixed default.
--- Replace the password below before running; this placeholder is intentionally invalid so
--- the script fails loudly instead of silently setting a guessable default.
+--
+-- Authenticated by RSA key pair, not a password: Snowflake has been actively
+-- deprecating single-factor password auth (MFA enforcement rolling out
+-- account-by-account), and password auth for a non-interactive service
+-- account is the wrong pattern regardless — MFA can't be satisfied by a
+-- pipeline. Generate the key pair once, locally (never commit the private key):
+--
+--   openssl genrsa -out keys/skypoints_dbt_rsa_key.p8 2048
+--   openssl pkcs8 -topk8 -inform PEM -nocrypt \
+--       -in keys/skypoints_dbt_rsa_key.p8 -out keys/skypoints_dbt_rsa_key.p8
+--   openssl rsa -in keys/skypoints_dbt_rsa_key.p8 -pubout -out keys/skypoints_dbt_rsa_key.pub
+--
+-- Then paste the PUBLIC key's base64 body below (the .pub file's content,
+-- excluding the "-----BEGIN/END PUBLIC KEY-----" lines). `keys/` is gitignored.
 CREATE USER IF NOT EXISTS SKYPOINTS_DBT
-  PASSWORD = '<PASSWORD_PLACEHOLDER>'
   DEFAULT_ROLE = SKYPOINTS_TRANSFORMER
   DEFAULT_WAREHOUSE = TRANSFORM_WH
   DEFAULT_NAMESPACE = SKYPOINTS.STAGING
-  MUST_CHANGE_PASSWORD = FALSE
-  COMMENT = 'Service account used by both Airflow ingestion and dbt transformations';
+  COMMENT = 'Service account used by both Airflow ingestion and dbt transformations (key-pair auth)';
+
+-- A separate ALTER (not folded into CREATE ... IF NOT EXISTS) so re-running this
+-- script also applies a rotated key to an already-existing user — CREATE USER IF
+-- NOT EXISTS is a no-op on an existing user and would silently skip a key update.
+ALTER USER SKYPOINTS_DBT SET RSA_PUBLIC_KEY = '<PASTE_PUBLIC_KEY_BODY_HERE>';
 
 GRANT ROLE SKYPOINTS_TRANSFORMER TO USER SKYPOINTS_DBT;
 GRANT ROLE SKYPOINTS_LOADER TO USER SKYPOINTS_DBT;

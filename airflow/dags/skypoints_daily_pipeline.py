@@ -28,6 +28,26 @@ DBT_PROJECT_DIR = "/opt/airflow/dbt_project"
 DBT_BIN = "/opt/dbt_venv/bin/dbt"
 
 
+def _load_private_key() -> bytes:
+    """Key-pair auth, not a password — see setup/snowflake_bootstrap.sql §8
+    for why. Loads the PEM private key and re-serializes it to the DER/PKCS8
+    bytes snowflake-connector-python's `private_key` parameter expects."""
+    from cryptography.hazmat.primitives import serialization
+
+    key_path = os.environ["SNOWFLAKE_PRIVATE_KEY_PATH"]
+    passphrase = os.environ.get("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE") or None
+    with open(key_path, "rb") as f:
+        private_key = serialization.load_pem_private_key(
+            f.read(),
+            password=passphrase.encode() if passphrase else None,
+        )
+    return private_key.private_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+
+
 def _snowflake_connection(role: str = "SKYPOINTS_LOADER", warehouse: str = "LOAD_WH"):
     """role/warehouse are explicit per-call parameters, not read from
     SNOWFLAKE_ROLE/SNOWFLAKE_WAREHOUSE env vars — different tasks need
@@ -38,7 +58,7 @@ def _snowflake_connection(role: str = "SKYPOINTS_LOADER", warehouse: str = "LOAD
     return snowflake.connector.connect(
         account=os.environ["SNOWFLAKE_ACCOUNT"],
         user=os.environ["SNOWFLAKE_USER"],
-        password=os.environ["SNOWFLAKE_PASSWORD"],
+        private_key=_load_private_key(),
         role=role,
         warehouse=warehouse,
         database=os.environ.get("SNOWFLAKE_DATABASE", "SKYPOINTS"),

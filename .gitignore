@@ -2,6 +2,7 @@
 .env
 airflow/.env
 dbt/profiles/profiles.yml
+keys/
 
 # dbt
 dbt/target/

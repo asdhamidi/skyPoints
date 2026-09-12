@@ -14,11 +14,15 @@ skypoints:
       threads: 4
 
     # Production / live-demo target, run by Airflow's isolated dbt venv.
+    # Key-pair auth, not a password — see setup/snowflake_bootstrap.sql §8 for why
+    # and how to generate the key. private_key_passphrase is optional (blank if
+    # the key was generated with -nocrypt, as the bootstrap script's instructions do).
     snowflake:
       type: snowflake
       account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
       user: "{{ env_var('SNOWFLAKE_USER') }}"
-      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE', '') }}"
       role: SKYPOINTS_TRANSFORMER
       database: SKYPOINTS
       warehouse: TRANSFORM_WH

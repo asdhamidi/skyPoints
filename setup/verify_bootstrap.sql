@@ -23,5 +23,6 @@ SHOW RESOURCE MONITORS LIKE 'SKYPOINTS_MONITOR';      -- expect 1 row, CREDIT_QU
 SHOW GRANTS TO ROLE SKYPOINTS_LOADER;
 SHOW GRANTS TO ROLE SKYPOINTS_TRANSFORMER;
 
-SHOW USERS LIKE 'SKYPOINTS_DBT';                      -- expect 1 row, DEFAULT_ROLE = SKYPOINTS_TRANSFORMER
+SHOW USERS LIKE 'SKYPOINTS_DBT';                      -- expect 1 row, DEFAULT_ROLE = SKYPOINTS_TRANSFORMER,
+                                                       -- has_rsa_public_key = true (key-pair auth, not password)
 SHOW GRANTS TO USER SKYPOINTS_DBT;                    -- expect BOTH SKYPOINTS_TRANSFORMER and SKYPOINTS_LOADER

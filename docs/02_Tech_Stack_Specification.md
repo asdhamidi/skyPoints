@@ -98,10 +98,11 @@ CI never connects to Snowflake and requires no cloud credentials — safe for a 
 
 ## 7. Secrets and Configuration
 
-- `.env` (git-ignored) holds `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD`, `SNOWFLAKE_ROLE`, `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_DATABASE`, `AIRFLOW_UID`.
+- `.env` (git-ignored) holds `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PRIVATE_KEY_PATH`, `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE`, `SNOWFLAKE_ROLE`, `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_DATABASE`, `AIRFLOW_UID`.
 - `.env.example` is committed as a template with no real values.
-- Airflow's `skypoints_snowflake` connection is created from these environment variables at container startup — never hardcoded in DAG code or dbt profiles.
-- Authentication: username/password for this build. Key-pair authentication is the recommended production hardening, not implemented here.
+- **Authentication is RSA key-pair, not a password** — Snowflake has been actively deprecating single-factor password auth (account-by-account MFA enforcement), and password auth for a non-interactive service account is the wrong pattern regardless, since MFA can't be satisfied by a pipeline. `setup/snowflake_bootstrap.sql` §8 has the key-generation commands and the `ALTER USER ... SET RSA_PUBLIC_KEY` statement.
+- The private key file itself lives in `keys/` (git-ignored, never committed), bind-mounted read-only into the Airflow containers at `/opt/airflow/keys`. Both dbt (`private_key_path` in `profiles.yml`) and the DAG's `snowflake-connector-python` calls (`_load_private_key()`) read the same file via `SNOWFLAKE_PRIVATE_KEY_PATH`.
+- Both connection paths read plain environment variables directly — no Airflow Connection object (§4).
 
 ---
 
@@ -109,8 +110,9 @@ CI never connects to Snowflake and requires no cloud credentials — safe for a 
 
 | Package | Version | Scope |
 |---|---|---|
-| `apache-airflow` | 2.9.x | installed from the official Airflow image's constraints file |
-| `dbt-snowflake` | 1.8.x | isolated venv inside the Airflow image |
+| `apache-airflow` | 2.9.3 | Airflow image (base) |
+| `dbt-snowflake` | 1.8.4 | isolated venv inside the Airflow image |
 | `dbt-duckdb` | 1.8.x | local dev only, not shipped in the Airflow image |
-| `apache-airflow-providers-snowflake` | latest compatible with 2.9.x | Airflow image |
+| `snowflake-connector-python` | 3.12.2 | Airflow image — DAG's own ingestion tasks (§4) |
+| `cryptography` | 43.0.1 | Airflow image — loads the RSA private key for key-pair auth (§7) |
 | Python | 3.11 | Airflow image and local dev |
