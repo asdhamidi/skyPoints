@@ -1,0 +1,20 @@
+# Environment / secrets
+.env
+airflow/.env
+dbt/profiles/profiles.yml
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+*.duckdb
+
+# Airflow runtime
+airflow/logs/
+
+# Python
+__pycache__/
+*.pyc
+
+# Generated fixtures (demo/generate_sample_feed.py output — not committed)
+landing/
