@@ -28,6 +28,37 @@ Redemption JSON --> RAW.REDEMPTION_FEED --> stg_redemptions (flattened)
 
 Stack: Snowflake (warehouse), dbt (transformation and tests), Airflow with `LocalExecutor` (orchestration), Docker Compose (local deployment).
 
+## Snowflake Data Objects
+
+### RAW schema
+
+| Object | Type | Purpose |
+|---|---|---|
+| `AUS_MEMBER_PROFILE` | Table | Landed AUS extract, string-typed, no casting on load |
+| `IND_MEMBER_PROFILE` | Table | Landed IND extract |
+| `USA_MEMBER_PROFILE` | Table | Landed USA extract |
+| `REDEMPTION_FEED` | Table | Landed redemption JSON, one row per document, `payload` as VARIANT |
+
+### STAGING schema
+
+| Object | Type | Purpose |
+|---|---|---|
+| `stg_member_profile_aus` | View | Harmonizes `RAW.AUS_MEMBER_PROFILE` into the canonical schema |
+| `stg_member_profile_ind` | View | Harmonizes `RAW.IND_MEMBER_PROFILE`; maps `Individual or Corporate` to `membership_type` |
+| `stg_member_profile_usa` | View | Harmonizes `RAW.USA_MEMBER_PROFILE`; parses concatenated dates defensively, never guessing an ambiguous one |
+| `stg_member_profile` | View | Union of the three models above, plus derived `age` and `stale_member_flag` |
+| `stg_redemptions` | View | Flattens the redemption JSON via `LATERAL FLATTEN`, one row per transaction |
+| `snap_member_country` | Table (dbt snapshot) | SCD2 history of `tier_code`, `last_flight_date`, `is_active` per `member_key` - not `country_code`, which is fixed at key creation |
+| `country_reference` | Table (dbt seed) | Canonical country code list; drives per-country table generation and country-code validation |
+
+### MARTS schema
+
+| Object | Type | Purpose |
+|---|---|---|
+| `int_member_profile_final` | Table | Current attribute values per `member_key` - the open (`dbt_valid_to IS NULL`) snapshot row |
+| `TABLE_AUS`, `TABLE_IND`, `TABLE_USA` | Table (generated) | One physical table per country in `country_reference`, produced by a single macro loop |
+| `redemptions` | Table | Redemptions joined to member profile on `member_id`, classified `RESOLVED`, `AMBIGUOUS`, or `ORPHAN` |
+
 ## Repository Structure
 
 ```
