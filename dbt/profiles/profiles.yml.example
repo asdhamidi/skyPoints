@@ -1,0 +1,26 @@
+# Copy to ~/.dbt/profiles.yml (or set DBT_PROFILES_DIR to this folder) and fill in the
+# Snowflake values via environment variables. Never commit the real profiles.yml — it is
+# gitignored. See docs/02_Tech_Stack_Specification.md §3, §7.
+
+skypoints:
+  target: duckdb
+  outputs:
+
+    # Local development only — never used for the live demo or as the authority on
+    # Snowflake-specific behavior. make dbt-fast targets this.
+    duckdb:
+      type: duckdb
+      path: 'skypoints_dev.duckdb'
+      threads: 4
+
+    # Production / live-demo target, run by Airflow's isolated dbt venv.
+    snowflake:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: SKYPOINTS_TRANSFORMER
+      database: SKYPOINTS
+      warehouse: TRANSFORM_WH
+      schema: STAGING
+      threads: 4
