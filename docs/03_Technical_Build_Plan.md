@@ -169,13 +169,13 @@ Idempotency: Snowflake's `COPY INTO` tracks load history per file name and skips
 | Phase | Deliverable | Exit criteria |
 |---|---|---|
 | 1 — Scaffold | repo skeleton, `docker-compose.yaml`, `dbt_project.yml`, `setup/snowflake_bootstrap.sql` | Snowflake objects exist; empty dbt project runs |
-| 2 — Fixtures + raw | `generate_sample_feed.py`, `convert_aus_xlsx_to_csv.py`, RAW tables | a generated fixture set loads into all four RAW tables |
+| 2 — Fixtures + raw | `generate_sample_feed.py`, `convert_aus_xlsx_to_csv.py`, RAW tables | fixture generator and converter pass their tests (`tests/`); RAW tables exist and are verified (`setup/verify_raw_tables.sql`). Actually loading a fixture set is deliberately deferred to Phase 8 — the `PUT`/`COPY INTO` logic is Airflow's `stage_and_copy_*` tasks, not a throwaway manual script |
 | 3 — Harmonization | `stg_member_profile_aus/_ind/_usa`, `stg_member_profile` | union produces one canonical-shape row per source member, correct `member_key`/`country_code` |
 | 4 — Derived columns | `calculate_age`, `is_stale_member` macros | Age/Stale_Member correct against fixtures with known DOB/flight dates, including `NULL`-DOB (USA) rows |
 | 5 — Attribute history + country split | `snap_member_country`, `int_member_profile_final`, `generate_country_tables` | a member's tracked attribute (e.g. `tier_code`) changed between two fixture run dates produces two snapshot versions for the same `member_key`; a genuine country change (a new `member_key` in a different source) lands only in the new country's table, per the acknowledged non-linkage limitation in `docs/01` §3 |
 | 6 — Redemptions | `stg_redemptions`, `redemptions.sql` | flattened row count matches fixture array lengths; join resolves `country_code` |
 | 7 — Validation | `tests/singular/*.sql`, schema tests | every fixture-injected defect (ID collisions, ambiguous USA dates, invalid AUS dates, bad country codes, duplicate txn) is caught, none silently passes |
-| 8 — Orchestration | `skypoints_daily_pipeline.py` | DAG runs the full sequence end to end against a fixture day |
+| 8 — Orchestration | `skypoints_daily_pipeline.py` | DAG runs the full sequence end to end against a fixture day, including the first actual `PUT`/`COPY INTO` load of a generated fixture set into all four RAW tables (Phase 2's exit criterion, deferred here) |
 | 9 — CI + demo polish | `ci.yml`, `DEMO_RUNBOOK.md` | CI green on push; demo runbook reproduces phases 5–7 live |
 
 ---
