@@ -45,11 +45,12 @@ CREATE USER IF NOT EXISTS SKYPOINTS_DBT
   DEFAULT_ROLE = SKYPOINTS_TRANSFORMER
   DEFAULT_WAREHOUSE = TRANSFORM_WH
   DEFAULT_NAMESPACE = SKYPOINTS.STAGING
-  COMMENT = 'Service account used by dbt (via Airflow) to run transformations against Snowflake';
+  COMMENT = 'Service account used by both Airflow ingestion and dbt transformations';
 GRANT ROLE SKYPOINTS_TRANSFORMER TO USER SKYPOINTS_DBT;
+GRANT ROLE SKYPOINTS_LOADER TO USER SKYPOINTS_DBT;
 ```
 
-`SKYPOINTS_DBT` is the user identity behind the `snowflake` target in `dbt/profiles/profiles.yml.example` (`SNOWFLAKE_USER`) — the account dbt authenticates as when Airflow's `dbt_*` tasks run. Full statement with password handling: `setup/snowflake_bootstrap.sql` §8.
+`SKYPOINTS_DBT` is the single service account used both by Airflow's ingestion tasks (connecting as `SKYPOINTS_LOADER`) and by dbt's `snowflake` target (`SNOWFLAKE_USER` in `dbt/profiles/profiles.yml.example`, as `SKYPOINTS_TRANSFORMER`) — one credential set in `.env`, each caller picks its role explicitly per connection rather than relying on the user's default role. Full statement with password handling: `setup/snowflake_bootstrap.sql` §8.
 
 Snowflake has no native Excel file format. `AUS.xlsx` is converted to CSV by a pipeline component (`airflow/scripts/convert_aus_xlsx_to_csv.py`) before it reaches `MEMBER_PROFILE_STAGE`; `IND.csv`/`USA.csv` are staged directly.
 
@@ -69,8 +70,8 @@ Stage type: Snowflake internal named stage. No external cloud storage account is
 ## 4. Airflow
 
 - Executor: `LocalExecutor` — single-node, no distributed workers required for this pipeline's volume.
-- `dbt` runs from an isolated Python virtualenv (`/opt/dbt_venv`) baked into the Airflow image at build time, invoked via `BashOperator`. This keeps `dbt-snowflake`'s dependency set separate from Airflow's own, avoiding version conflicts between the two.
-- Connection: `skypoints_snowflake`, provider `apache-airflow-providers-snowflake`, created from environment variables at container start.
+- `dbt` runs from an isolated Python virtualenv (`/opt/dbt_venv`) baked into the Airflow image at build time, invoked via `BashOperator`. This keeps `dbt-snowflake`'s dependency set separate from Airflow's own, avoiding version conflicts between the two. `dbt deps` runs once, in `airflow-init`, against the bind-mounted `dbt/` project — not at image-build time, since the project isn't present in the build context under the bind-mount approach.
+- Snowflake access from the DAG's ingestion tasks uses `snowflake-connector-python` directly (`PythonOperator`), reading the same plain `SNOWFLAKE_*` environment variables dbt's `profiles.yml` already uses — not an Airflow Connection object or `apache-airflow-providers-snowflake`. One fewer dependency in the Airflow image, and no connection-URI to construct/encode (a real risk if the password contains URI-reserved characters).
 - Schedule: `@daily`, `catchup=False`, `max_active_runs=1`, `retries=1`.
 - Full DAG/task specification is in `03_Technical_Build_Plan.md`.
 

@@ -86,9 +86,12 @@ GRANT SELECT ON FUTURE TABLES IN SCHEMA SKYPOINTS.STAGING TO ROLE SKYPOINTS_TRAN
 GRANT SELECT ON FUTURE TABLES IN SCHEMA SKYPOINTS.MARTS TO ROLE SKYPOINTS_TRANSFORMER;
 GRANT USAGE ON WAREHOUSE TRANSFORM_WH TO ROLE SKYPOINTS_TRANSFORMER;
 
--- 8. Service user for dbt --------------------------------------------------
--- Authenticates dbt's `snowflake` target (dbt/profiles/profiles.yml.example) — the user
--- Airflow's dbt_seed/dbt_snapshot/dbt_run_*/dbt_test tasks run as.
+-- 8. Service user for dbt AND ingestion --------------------------------------
+-- Single service account used by both Airflow's stage_and_copy_* tasks (as
+-- SKYPOINTS_LOADER — see airflow/dags/skypoints_daily_pipeline.py) and dbt's
+-- `snowflake` target (as SKYPOINTS_TRANSFORMER — dbt/profiles/profiles.yml.example).
+-- Holding both roles on one user keeps one credential set in .env rather than two;
+-- each caller picks its role explicitly per connection, not via a fixed default.
 -- Replace the password below before running; this placeholder is intentionally invalid so
 -- the script fails loudly instead of silently setting a guessable default.
 CREATE USER IF NOT EXISTS SKYPOINTS_DBT
@@ -97,10 +100,7 @@ CREATE USER IF NOT EXISTS SKYPOINTS_DBT
   DEFAULT_WAREHOUSE = TRANSFORM_WH
   DEFAULT_NAMESPACE = SKYPOINTS.STAGING
   MUST_CHANGE_PASSWORD = FALSE
-  COMMENT = 'Service account used by dbt (via Airflow) to run transformations against Snowflake';
-  
-GRANT ROLE SKYPOINTS_TRANSFORMER TO USER SKYPOINTS_DBT;
+  COMMENT = 'Service account used by both Airflow ingestion and dbt transformations';
 
--- A separate user/credential for the raw-ingestion side (SKYPOINTS_LOADER role, used by
--- Airflow's stage_and_copy_* tasks) is not created here — add the same way when needed:
--- CREATE USER IF NOT EXISTS SKYPOINTS_LOADER_SVC ... ; GRANT ROLE SKYPOINTS_LOADER TO USER SKYPOINTS_LOADER_SVC;
+GRANT ROLE SKYPOINTS_TRANSFORMER TO USER SKYPOINTS_DBT;
+GRANT ROLE SKYPOINTS_LOADER TO USER SKYPOINTS_DBT;
