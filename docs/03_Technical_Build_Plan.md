@@ -168,13 +168,13 @@ skyPoints/
 | `stage_and_copy_aus` / `_ind` / `_usa` | `SnowflakeOperator` | respective file-ready task | `PUT` + `COPY INTO` per-source RAW table |
 | `stage_and_copy_redemptions` | `SnowflakeOperator` | `check_redemption_file` | `PUT` + `COPY INTO` `RAW.REDEMPTION_FEED` |
 | `dbt_seed` | `BashOperator` | all `stage_and_copy_*` | load `country_reference`, `tier_reference` |
-| `dbt_snapshot` | `BashOperator` | `dbt_seed` | run `snap_member_country` |
-| `dbt_run_staging` | `BashOperator` | `dbt_snapshot` | build `stg_member_profile*`, `stg_redemptions` |
-| `dbt_run_marts` | `BashOperator` | `dbt_run_staging` | build `int_member_profile_final`, country tables, `redemptions` |
+| `dbt_run_staging` | `BashOperator` | `dbt_seed` | build `stg_member_profile*`, `stg_redemptions` |
+| `dbt_snapshot` | `BashOperator` | `dbt_run_staging` | run `snap_member_country` — reads `stg_member_profile`, so must run after it exists |
+| `dbt_run_marts` | `BashOperator` | `dbt_snapshot` | build `int_member_profile_final`, country tables, `redemptions` |
 | `dbt_test` | `BashOperator` | `dbt_run_marts` | run the full test suite |
 | `publish_run_summary` | `PythonOperator` | `dbt_test` | log row counts per country table and test pass/fail summary |
 
-Idempotency: Snowflake's `COPY INTO` tracks load history per file name and skips a file already loaded; the snapshot only inserts a new row on an actual `country_code` change. Reruns of the same DAG run are therefore safe without extra bookkeeping.
+Idempotency: Snowflake's `COPY INTO` tracks load history per file name and skips a file already loaded; the snapshot only inserts a new row when a tracked attribute (`tier_code`, `last_flight_date`, `is_active`) actually changes — not on `country_code`, which is fixed by construction (`docs/01` §3, §7). Reruns of the same DAG run are therefore safe without extra bookkeeping.
 
 ---
 

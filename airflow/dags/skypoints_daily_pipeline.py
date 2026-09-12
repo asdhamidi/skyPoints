@@ -151,4 +151,4 @@ with DAG(
         stage_and_copy_ind_task,
         stage_and_copy_usa_task,
         stage_and_copy_redemptions_task,
-    ] >> dbt_seed >> dbt_snapshot >> dbt_run_staging >> dbt_run_marts >> dbt_test >> publish_run_summary_task
+    ] >> dbt_seed >> dbt_run_staging >> dbt_snapshot >> dbt_run_marts >> dbt_test >> publish_run_summary_task
