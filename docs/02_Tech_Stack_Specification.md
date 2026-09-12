@@ -40,7 +40,16 @@ CREATE RESOURCE MONITOR IF NOT EXISTS SKYPOINTS_MONITOR
   WITH CREDIT_QUOTA = 25 TRIGGERS ON 80 PERCENT DO NOTIFY ON 100 PERCENT DO SUSPEND;
 ALTER WAREHOUSE LOAD_WH      SET RESOURCE_MONITOR = SKYPOINTS_MONITOR;
 ALTER WAREHOUSE TRANSFORM_WH SET RESOURCE_MONITOR = SKYPOINTS_MONITOR;
+
+CREATE USER IF NOT EXISTS SKYPOINTS_DBT
+  DEFAULT_ROLE = SKYPOINTS_TRANSFORMER
+  DEFAULT_WAREHOUSE = TRANSFORM_WH
+  DEFAULT_NAMESPACE = SKYPOINTS.STAGING
+  COMMENT = 'Service account used by dbt (via Airflow) to run transformations against Snowflake';
+GRANT ROLE SKYPOINTS_TRANSFORMER TO USER SKYPOINTS_DBT;
 ```
+
+`SKYPOINTS_DBT` is the user identity behind the `snowflake` target in `dbt/profiles/profiles.yml.example` (`SNOWFLAKE_USER`) — the account dbt authenticates as when Airflow's `dbt_*` tasks run. Full statement with password handling: `setup/snowflake_bootstrap.sql` §8.
 
 Snowflake has no native Excel file format. `AUS.xlsx` is converted to CSV by a pipeline component (`airflow/scripts/convert_aus_xlsx_to_csv.py`) before it reaches `MEMBER_PROFILE_STAGE`; `IND.csv`/`USA.csv` are staged directly.
 

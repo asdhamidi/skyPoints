@@ -80,7 +80,21 @@ GRANT SELECT ON FUTURE TABLES IN SCHEMA SKYPOINTS.STAGING TO ROLE SKYPOINTS_TRAN
 GRANT SELECT ON FUTURE TABLES IN SCHEMA SKYPOINTS.MARTS TO ROLE SKYPOINTS_TRANSFORMER;
 GRANT USAGE ON WAREHOUSE TRANSFORM_WH TO ROLE SKYPOINTS_TRANSFORMER;
 
--- 8. Attach roles to the user(s) that will run ingestion / dbt --------------
--- Replace <YOUR_USERNAME> with the Snowflake user Airflow/dbt will authenticate as, then uncomment:
--- GRANT ROLE SKYPOINTS_LOADER TO USER <YOUR_USERNAME>;
--- GRANT ROLE SKYPOINTS_TRANSFORMER TO USER <YOUR_USERNAME>;
+-- 8. Service user for dbt --------------------------------------------------
+-- Authenticates dbt's `snowflake` target (dbt/profiles/profiles.yml.example) — the user
+-- Airflow's dbt_seed/dbt_snapshot/dbt_run_*/dbt_test tasks run as.
+-- Replace the password below before running; this placeholder is intentionally invalid so
+-- the script fails loudly instead of silently setting a guessable default.
+CREATE USER IF NOT EXISTS SKYPOINTS_DBT
+  PASSWORD = '<PASSWORD_PLACEHOLDER>'
+  DEFAULT_ROLE = SKYPOINTS_TRANSFORMER
+  DEFAULT_WAREHOUSE = TRANSFORM_WH
+  DEFAULT_NAMESPACE = SKYPOINTS.STAGING
+  MUST_CHANGE_PASSWORD = FALSE
+  COMMENT = 'Service account used by dbt (via Airflow) to run transformations against Snowflake';
+  
+GRANT ROLE SKYPOINTS_TRANSFORMER TO USER SKYPOINTS_DBT;
+
+-- A separate user/credential for the raw-ingestion side (SKYPOINTS_LOADER role, used by
+-- Airflow's stage_and_copy_* tasks) is not created here — add the same way when needed:
+-- CREATE USER IF NOT EXISTS SKYPOINTS_LOADER_SVC ... ; GRANT ROLE SKYPOINTS_LOADER TO USER SKYPOINTS_LOADER_SVC;
