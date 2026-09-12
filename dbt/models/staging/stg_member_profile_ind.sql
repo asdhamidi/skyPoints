@@ -12,11 +12,20 @@
   The *_raw columns carry the original unparsed string through so a failed
   parse can be explained in the DLQ (rejected_member_records.sql) rather than
   just showing up as an unexplained NULL — see docs/01 §10.
+
+  Incremental, merged by member_key (docs/01 §11) — see stg_member_profile_aus.sql
+  for the full reasoning; identical pattern here.
 #}
+
+{{ config(materialized='incremental', unique_key='member_key') }}
 
 with source as (
 
     select * from {{ source('raw', 'ind_member_profile') }}
+
+    {% if is_incremental() %}
+    where load_ts > (select coalesce(max(load_ts), '1900-01-01'::timestamp_ntz) from {{ this }})
+    {% endif %}
 
 ),
 
@@ -47,3 +56,4 @@ renamed as (
 )
 
 select * from renamed
+qualify row_number() over (partition by member_key order by load_ts desc) = 1

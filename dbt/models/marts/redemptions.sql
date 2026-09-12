@@ -8,11 +8,26 @@
     - ORPHAN    : no country member_id matches
   Kept as a single global table, not split per country — the classification
   itself is not a per-country concept.
+
+  Incremental, merged by txn_id (docs/01 §11): only new transactions are
+  processed each run, but each is still classified against the FULL current
+  member_matches population below (not filtered incrementally) — a redemption
+  needs to be checked against everyone, not just members who changed today.
+  unique_key on txn_id (rather than plain append) also means a redemption
+  whose classification would differ on a later run — e.g. an ORPHAN whose
+  matching member profile arrives on a subsequent day — gets re-evaluated
+  rather than stuck with its first-seen classification forever.
 #}
+
+{{ config(materialized='incremental', unique_key='txn_id') }}
 
 with redemptions as (
 
     select * from {{ ref('stg_redemptions') }}
+
+    {% if is_incremental() %}
+    where load_ts > (select coalesce(max(load_ts), '1900-01-01'::timestamp_ntz) from {{ this }})
+    {% endif %}
 
 ),
 

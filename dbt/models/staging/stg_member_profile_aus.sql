@@ -13,11 +13,25 @@
   The *_raw columns carry the original unparsed string through so a failed
   parse can be explained in the DLQ (rejected_member_records.sql) rather than
   just showing up as an unexplained NULL — see docs/01 §10.
+
+  Incremental, merged by member_key (docs/01 §11): only RAW rows newer than
+  what's already been processed are read each run, and a member_key already
+  present gets updated in place rather than duplicated — this is what keeps a
+  daily run's cost bounded to what's new, instead of rescanning RAW's entire
+  ever-growing history every time. QUALIFY collapses to one row per
+  member_key even if this run's own batch contains more than one (e.g.
+  catching up several backlogged days at once).
 #}
+
+{{ config(materialized='incremental', unique_key='member_key') }}
 
 with source as (
 
     select * from {{ source('raw', 'aus_member_profile') }}
+
+    {% if is_incremental() %}
+    where load_ts > (select coalesce(max(load_ts), '1900-01-01'::timestamp_ntz) from {{ this }})
+    {% endif %}
 
 ),
 
@@ -48,3 +62,4 @@ renamed as (
 )
 
 select * from renamed
+qualify row_number() over (partition by member_key order by load_ts desc) = 1

@@ -150,3 +150,21 @@ A member row failing a mandatory-field check (`member_name`, `member_id`, or `en
 **Scope:** only the three mandatory fields trigger a DLQ entry. An optional field (`dob`, `last_flight_date`) failing to parse — including a genuinely ambiguous USA date — still resolves to `NULL` and the row still flows through normally; that was always the correct behavior for an optional field and remains unchanged. The DLQ only exists for the case where a `NULL` would otherwise silently violate a mandatory-field guarantee the rest of the design depends on.
 
 **Observability:** `publish_run_summary` (`airflow/scripts/snowflake_tasks.py`) logs a count per `rejection_reason` category for the latest `feed_date` alongside the existing per-country row counts and redemption match-status counts.
+
+---
+
+## 11. Scaling: Incremental Materialization
+
+The layers described above were originally views and full-rebuild tables — correct, and adequate at the volumes exercised so far, but not what "billions of records every day" actually requires, since `RAW` is append-only and a view re-executes its full `SELECT` against all of `RAW`'s accumulated history on every single query. Converted to incremental:
+
+**Per-source harmonization models** (`stg_member_profile_aus`/`_ind`/`_usa`, `stg_redemptions`) are `materialized='incremental'`, filtered to `RAW` rows newer than what's already been processed (`load_ts > max(load_ts) in {{ this }}`), with `unique_key` so a member/transaction already present is updated in place rather than duplicated. `QUALIFY row_number() ... = 1` collapses to one row per key even if a single run's own incremental batch contains more than one (e.g. catching up several backlogged days at once). This bounds each run's cost to what's newly arrived, not the full history — the actual scaling requirement.
+
+**Two different patterns, deliberately:**
+- Member profile models (`unique_key='member_key'`) behave like a slowly-changing dimension — bounded by total population size, upserted in place. A member's row is *replaced* by their latest data, not accumulated.
+- `stg_redemptions` and `marts.redemptions` (`unique_key='txn_id'`) behave like a fact table — genuinely unbounded growth over time, upsert exists only for idempotency (a resent file doesn't duplicate a transaction) and to let a redemption's `match_status` be re-evaluated if a previously-orphaned member's profile arrives on a later day, not to model "latest wins" the way `member_key` does.
+
+**Country tables** (`generate_country_tables` macro) changed from `CREATE OR REPLACE TABLE ... AS SELECT` to `CREATE TABLE IF NOT EXISTS ... LIKE` (once) plus `MERGE` (every run) — a full rebuild re-writes every country's entire population on every run regardless of how few members actually changed; `MERGE` only touches what's new or different.
+
+**A consequence worth stating plainly:** the dbt snapshot (`snap_member_country`) does not have `invalidate_hard_deletes` enabled. If a member who was previously valid is rejected on a later day (their latest data now fails a mandatory-field check and lands in `rejected_member_records` instead of `stg_member_profile_valid`), they simply stop appearing in that day's snapshot *input* — the snapshot does not treat this as a deletion, so their last known-good record stays the "current" one in `int_member_profile_final` and their country table, unchanged, until either their data is corrected or they genuinely reappear valid. This is a deliberate choice (don't remove someone from the current view because of a transient bad feed) rather than an oversight, but it means "rejected today" and "removed from the current population" are not the same thing here.
+
+**Still depends on the full-daily-snapshot assumption in §9**: if a source ever moves to delta-only delivery (only sending changed rows), the per-source incremental filter and `QUALIFY` logic above already handle that correctly — but `assert_no_member_rows_lost_to_dlq_split`'s reliance on "the latest `feed_date`" representing "today's whole batch" would need revisiting, since not every member would carry today's `feed_date` under a delta model.
