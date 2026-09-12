@@ -54,6 +54,12 @@ skyPoints/
 ├── SkyPoints_Source_Data_Findings.md
 ├── setup/
 │   └── snowflake_bootstrap.sql
+├── pytest.ini
+├── requirements.txt
+├── requirements-dev.txt
+├── tests/
+│   ├── test_generate_sample_feed.py
+│   └── test_convert_aus_xlsx_to_csv.py
 ├── demo/
 │   ├── generate_sample_feed.py
 │   └── DEMO_RUNBOOK.md
@@ -107,6 +113,10 @@ skyPoints/
 
 | Component | Type | Purpose | Input | Output |
 |---|---|---|---|---|
+| `pytest.ini` | Test config | `testpaths = tests`, `pythonpath = demo airflow/scripts` — makes both Python components importable as top-level modules by their tests, matching how they run as standalone scripts | — | — |
+| `requirements.txt` / `requirements-dev.txt` | Dependency manifest | Runtime (`openpyxl`) vs. test-only (`pytest`) dependencies for the Python components | — | — |
+| `tests/test_generate_sample_feed.py` | pytest suite | Defines the contract for `demo/generate_sample_feed.py` ahead of its implementation (docs/04 Red step): required edge cases (AUS literal `"NULL"`, invalid date string, ambiguous USA date, IND membership-type values), file output shape, and a same-`member_key`-different-run-date attribute change | — | pass/fail |
+| `tests/test_convert_aus_xlsx_to_csv.py` | pytest suite | Defines the contract for `airflow/scripts/convert_aus_xlsx_to_csv.py` ahead of its implementation: header/text passthrough (`"NULL"`, invalid date strings unchanged), deterministic ISO formatting of real datetime cells, clear failure on a missing source file | — | pass/fail |
 | `demo/generate_sample_feed.py` | Python script | Produces per-country fixture files for a given run date, including known edge cases (ambiguous USA dates, AUS `"NULL"` string, IND `Individual or Corporate` values, a member reappearing under a different country across two run dates) | `--run-date` | `landing/*.xlsx`, `landing/*.csv`, `landing/*.json` |
 | `setup/snowflake_bootstrap.sql` | SQL script | One-time Snowflake environment provisioning | — | databases/schemas/warehouses/roles/stages/file formats/resource monitor |
 | `airflow/scripts/convert_aus_xlsx_to_csv.py` | Python script | Converts `AUS.xlsx` to CSV — Snowflake has no native Excel file format | `landing/aus_member_<date>.xlsx` | `landing/aus_member_<date>.csv` |
