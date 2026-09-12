@@ -114,6 +114,20 @@ class TestUsaRows:
         )
 
 
+def _country_member_ids(run_date):
+    """member_id sets per country, as strings, for checking how many countries
+    a given redemption member_id matches — mirrors the join classification in
+    docs/01_Design_Specification.md §7 (resolved / orphan / ambiguous)."""
+    aus_ids = {str(r["Unique ID"]) for r in generate_sample_feed.build_aus_rows(run_date)}
+    ind_ids = {str(r["ID"]) for r in generate_sample_feed.build_ind_rows(run_date)}
+    usa_ids = {str(r["ID"]) for r in generate_sample_feed.build_usa_rows(run_date)}
+    return aus_ids, ind_ids, usa_ids
+
+
+def _matching_country_count(member_id, id_sets):
+    return sum(member_id in ids for ids in id_sets)
+
+
 class TestRedemptionPayloads:
     def test_member_ids_reference_generated_members(self):
         ind_rows = generate_sample_feed.build_ind_rows(RUN_DATE_1)
@@ -122,6 +136,34 @@ class TestRedemptionPayloads:
         assert any(p["member_id"] in ind_ids for p in payloads), (
             "at least one redemption should reference a member that actually "
             "exists in the day's generated member rows"
+        )
+
+    def test_includes_a_resolved_match(self):
+        """Exactly one country's rows contain this member_id — docs/01 §7 'resolved'."""
+        id_sets = _country_member_ids(RUN_DATE_1)
+        payloads = generate_sample_feed.build_redemption_payloads(RUN_DATE_1)
+        assert any(_matching_country_count(p["member_id"], id_sets) == 1 for p in payloads), (
+            "expected at least one redemption whose member_id resolves to exactly "
+            "one country, per docs/01 §7"
+        )
+
+    def test_includes_an_orphan_match(self):
+        """No country's rows contain this member_id — docs/01 §7/§8 'orphan'."""
+        id_sets = _country_member_ids(RUN_DATE_1)
+        payloads = generate_sample_feed.build_redemption_payloads(RUN_DATE_1)
+        assert any(_matching_country_count(p["member_id"], id_sets) == 0 for p in payloads), (
+            "expected at least one redemption whose member_id matches no country at "
+            "all, per docs/01 §7/§8"
+        )
+
+    def test_includes_an_ambiguous_match(self):
+        """More than one country's rows contain this member_id — docs/01 §7 'ambiguous',
+        the common case given AUS/IND/USA's overlapping local ID ranges."""
+        id_sets = _country_member_ids(RUN_DATE_1)
+        payloads = generate_sample_feed.build_redemption_payloads(RUN_DATE_1)
+        assert any(_matching_country_count(p["member_id"], id_sets) > 1 for p in payloads), (
+            "expected at least one redemption whose member_id matches more than one "
+            "country at once, per docs/01 §7"
         )
 
 

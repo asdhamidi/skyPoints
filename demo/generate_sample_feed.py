@@ -57,7 +57,14 @@ def build_ind_rows(run_date: date) -> list[dict]:
     """Reproduces IND.csv (docs/05 §1): US-style M/D/YYYY text dates. Member 2's
     TierCode alternates by day parity, giving the attribute-history snapshot
     (docs/01 §7.3) a real change to version across two run dates — see
-    test_second_run_date_changes_a_tracked_attribute."""
+    test_second_run_date_changes_a_tracked_attribute.
+
+    Member 4 (Priya) is a demo-only addition beyond the real IND.csv sample:
+    her ID (4) doesn't exist in AUS or USA's 1-3 range, so a redemption
+    referencing her is the only one that resolves to exactly one country
+    under the join classification in docs/01 §7 — everything in 1-3 matches
+    all three sources at once (docs/01 §7, §9) and can't demonstrate a clean
+    resolved match on its own."""
     rahul_tier = "GLD" if run_date.day % 2 == 1 else "PLT"
     return [
         {
@@ -71,6 +78,10 @@ def build_ind_rows(run_date: date) -> list[dict]:
         {
             "ID": 3, "Name": "Sameer", "DOB": "8/13/1952", "TierCode": "GLD",
             "EnrollmentDate": "2/20/2022", "Individual or Corporate": "I", "Flight Date": "2/25/2022",
+        },
+        {
+            "ID": 4, "Name": "Priya", "DOB": "5/22/1990", "TierCode": "SLV",
+            "EnrollmentDate": "4/10/2023", "Individual or Corporate": "I", "Flight Date": "4/15/2023",
         },
     ]
 
@@ -87,18 +98,36 @@ def build_usa_rows(run_date: date) -> list[dict]:
 
 
 def build_redemption_payloads(run_date: date) -> list[dict]:
-    """One JSON document per member per day (docs/01 §2), referencing a
-    member_id that actually exists in this run's IND rows."""
+    """One JSON document per member per day (docs/01 §2). Three payloads,
+    each demonstrating a different join outcome per docs/01 §7:
+      - member_id "4"  -> RESOLVED  (only IND has this ID)
+      - member_id "1"  -> AMBIGUOUS (AUS, IND, and USA all have this ID)
+      - member_id "99" -> ORPHAN    (no source has this ID)
+    """
     feed_date = run_date.strftime("%Y%m%d")
     return [
         {
-            "member_id": "1",
+            "member_id": "4",
             "feed_date": feed_date,
             "redemptions": [
                 {"txn_id": "RX10091", "txn_date": feed_date, "partner": "AeroLink",
                  "miles_redeemed": 12000, "status": "COMPLETED"},
+            ],
+        },
+        {
+            "member_id": "1",
+            "feed_date": feed_date,
+            "redemptions": [
                 {"txn_id": "RX10092", "txn_date": feed_date, "partner": "SkyPoints",
                  "miles_redeemed": 5000, "status": "PENDING"},
+            ],
+        },
+        {
+            "member_id": "99",
+            "feed_date": feed_date,
+            "redemptions": [
+                {"txn_id": "RX10093", "txn_date": feed_date, "partner": "AeroLink",
+                 "miles_redeemed": 3000, "status": "COMPLETED"},
             ],
         },
     ]
