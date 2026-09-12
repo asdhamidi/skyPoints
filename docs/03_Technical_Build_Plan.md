@@ -153,6 +153,8 @@ skyPoints/
 
 `skypoints_daily_pipeline` — `schedule_interval='@daily'`, `catchup=False`, `max_active_runs=1`, `retries=1`.
 
+`landing/` (repo root, gitignored) is bind-mounted into the Airflow containers at `/opt/airflow/landing` (`airflow/docker-compose.yaml`). `FileSensor` tasks poll `/opt/airflow/landing/<source>_member_{{ ds_nodash }}.<ext>` (or `redemption_{{ ds_nodash }}.json`) — the naming convention `demo/generate_sample_feed.py` already writes — so each scheduled run only looks for that run's own dated file.
+
 | Task ID | Operator | Upstream | Purpose |
 |---|---|---|---|
 | `check_aus_file`, `check_ind_file`, `check_usa_file`, `check_redemption_file` | `FileSensor` | — | wait for the day's landing files |
