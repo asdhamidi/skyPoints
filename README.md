@@ -114,6 +114,8 @@ python demo/generate_sample_feed.py --run-date 2024-01-15 --out-dir landing
 cd airflow && docker compose up -d --build
 ```
 
+The fixture generator defaults to 250,000 bulk records per source on top of the fixed edge-case rows (`--record-count` to override - e.g. a small value for a quick smoke test).
+
 In the Airflow UI (`localhost:8080`, `admin`/`admin`), unpause `skypoints_daily_pipeline` and trigger it for the same logical date used above.
 
 ## Testing
