@@ -70,6 +70,7 @@ Every date is parsed with an explicit, source-specific format mask. No format au
 
 **RAW** — one table per source, string-typed (no casting on load), carries `source_file_name` and `load_ts`:
 `RAW.AUS_MEMBER_PROFILE`, `RAW.IND_MEMBER_PROFILE`, `RAW.USA_MEMBER_PROFILE`, `RAW.REDEMPTION_FEED`.
+DDL: `setup/raw_tables.sql`.
 
 `AUS.xlsx` is converted to CSV ahead of staging — Snowflake `COPY INTO` has no native Excel file format, so an Excel→CSV conversion step is a required pipeline component (see `03_Technical_Build_Plan.md` §3).
 

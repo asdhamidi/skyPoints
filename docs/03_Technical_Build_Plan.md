@@ -119,6 +119,8 @@ skyPoints/
 | `tests/test_convert_aus_xlsx_to_csv.py` | pytest suite | Defines the contract for `airflow/scripts/convert_aus_xlsx_to_csv.py` ahead of its implementation: header/text passthrough (`"NULL"`, invalid date strings unchanged), deterministic ISO formatting of real datetime cells, clear failure on a missing source file | — | pass/fail |
 | `demo/generate_sample_feed.py` | Python script | Produces per-country fixture files for a given run date, including known edge cases (ambiguous USA dates, AUS `"NULL"` string, IND `Individual or Corporate` values, a member reappearing under a different country across two run dates) | `--run-date` | `landing/*.xlsx`, `landing/*.csv`, `landing/*.json` |
 | `setup/snowflake_bootstrap.sql` | SQL script | One-time Snowflake environment provisioning | — | databases/schemas/warehouses/roles/stages/file formats/resource monitor |
+| `setup/raw_tables.sql` | SQL script | RAW layer DDL — one string-typed table per source plus load metadata (docs/01 §5) | — | `RAW.AUS_MEMBER_PROFILE`, `RAW.IND_MEMBER_PROFILE`, `RAW.USA_MEMBER_PROFILE`, `RAW.REDEMPTION_FEED` |
+| `setup/verify_raw_tables.sql` | SQL script | Confirms the four RAW tables and their columns exist as specified | — | pass/fail |
 | `airflow/scripts/convert_aus_xlsx_to_csv.py` | Python script | Converts `AUS.xlsx` to CSV — Snowflake has no native Excel file format | `landing/aus_member_<date>.xlsx` | `landing/aus_member_<date>.csv` |
 | `dbt/seeds/country_reference.csv` | dbt seed | Canonical country code list; drives `generate_country_tables` macro and the country-code validation test | — | `SEEDS.COUNTRY_REFERENCE` |
 | `dbt/seeds/tier_reference.csv` | dbt seed | Reference list of valid tier codes | — | `SEEDS.TIER_REFERENCE` |
