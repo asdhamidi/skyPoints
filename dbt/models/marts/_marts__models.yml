@@ -16,3 +16,17 @@ models:
       Thin wrapper model that triggers the generate_country_tables macro as a
       side effect of `dbt run --select marts` (docs/01 §6.5). Its own output is
       just an audit row, not the per-country data itself.
+
+  - name: redemptions
+    description: >
+      Redemptions joined to member profile, classified RESOLVED / AMBIGUOUS / ORPHAN
+      rather than assuming a clean join (docs/01 §7).
+    columns:
+      - name: txn_id
+        tests:
+          - not_null
+      - name: match_status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['RESOLVED', 'AMBIGUOUS', 'ORPHAN']

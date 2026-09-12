@@ -10,6 +10,16 @@ models:
   - name: stg_member_profile_usa
     description: Harmonizes RAW.USA_MEMBER_PROFILE into the canonical member profile shape (docs/01 §2).
 
+  - name: stg_redemptions
+    description: Flattens RAW.REDEMPTION_FEED into one row per transaction (docs/01 §7).
+    columns:
+      - name: txn_id
+        tests:
+          - not_null
+      - name: member_id
+        tests:
+          - not_null
+
   - name: stg_member_profile
     description: >
       Canonical member profile — union of the three per-source harmonization models
