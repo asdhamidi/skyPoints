@@ -100,7 +100,14 @@ DDL: `setup/raw_tables.sql`.
 
 Raw JSON lands as one row per source document, `payload` as `VARIANT`. `stg_redemptions` flattens `payload:redemptions` via `LATERAL FLATTEN` into one row per transaction: `member_id, feed_date, txn_id, txn_date, partner, miles_redeemed, status`.
 
-`marts.redemptions` joins `stg_redemptions` to `int_member_profile_final` on `member_id` (scoped by `country_code` resolution) to attach `country_code`, and is kept as a single global table rather than split per country.
+**Join resolution to member profile.** The feed's `member_id` is a bare identifier with no country attached — and because `AUS`/`IND`/`USA` all use overlapping small local ID ranges (§2 — all three files number members `1, 2, 3…`), a bare `member_id` routinely matches more than one country at once (e.g. `"1"` is simultaneously AUS's Mike, IND's Vikas, and USA's Sam). This is the same missing-global-identity gap already noted in §3/§9, surfacing again here — not a new limitation. The sample redemption payload in the assessment brief (`"member_id": "223457"`) is itself only consistent with the brief's illustrative unified flat file's ID space, not with the real per-country files' local IDs, which is further evidence no single shared ID space is actually available.
+
+`marts.redemptions` therefore joins `stg_redemptions` to `int_member_profile_final` on `member_id` and classifies every redemption by match count rather than assuming a clean join:
+- **exactly one** `country_code` matches → resolved, `country_code` attached
+- **zero** matches → orphan — logged, not silently dropped
+- **more than one** matches → ambiguous — logged, **never arbitrarily resolved to one country**
+
+`marts.redemptions` is kept as a single global table (not split per country), consistent with the "resolved/orphan/ambiguous" classification not being a per-country concept.
 
 ---
 
@@ -113,7 +120,7 @@ Raw JSON lands as one row per source document, `payload` as `VARIANT`. `stg_rede
 | `country_code` must exist in `country_reference` seed | all member rows | reject row, log |
 | ambiguous date | `USA` rows only (§4) | quarantine, never guess |
 | `txn_id` unique | redemptions | reject duplicate, log |
-| `member_id` referential integrity | redemptions → member profile | log orphan, do not silently drop |
+| `member_id` referential integrity | redemptions → member profile | classify as resolved (exactly one country matches) / orphan (none match) / ambiguous (more than one matches) — log orphan and ambiguous, never guess a country for an ambiguous match (§7) |
 | raw field count matches source's expected column count | all raw ingestion | reject file / alert |
 | `post_code` type | all sources | stored as VARCHAR; INT is never used |
 
@@ -122,6 +129,7 @@ Raw JSON lands as one row per source document, `payload` as `VARIANT`. `stg_rede
 ## 9. Assumptions and Limitations
 
 - Cross-country member-move detection is limited to a `member_key` reappearing under a different `country_code`; a true physical move that arrives as a new local ID in a new source file is not detected by this design (§3).
+- The redemption feed's `member_id` cannot be reliably attributed to one country from the data given: `AUS`/`IND`/`USA`'s overlapping local ID ranges mean a bare `member_id` frequently matches more than one country's member at once (§7). A resolved match is not a guarantee of correctness, only an absence of ambiguity in this data; a genuinely reliable join needs the same global identity system missing per §3.
 - The flat-file DOB format referenced in the assessment brief (`MMDDYYYY` vs. `DDMMYYYY`) is assumed `MMDDYYYY`, unconfirmed.
 - The country set is assumed fixed to `seeds/country_reference.csv`; a new country requires a seed update, not a code change.
 - Each per-country source is assumed to deliver a full daily snapshot of its members, not a delta; if any source instead delivers only changed rows, the staging de-duplication logic in §6.4 must be revised to merge against prior state rather than replace it.
