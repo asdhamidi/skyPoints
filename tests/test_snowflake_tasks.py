@@ -50,10 +50,40 @@ class TestLoadPrivateKey:
         reloaded = serialization.load_der_private_key(result, password=None)
         assert reloaded.key_size == 2048
 
-    def test_wrong_passphrase_raises(self, tmp_path):
+    def test_wrong_passphrase_raises_helpful_error(self, tmp_path):
         key_path = _write_test_key(tmp_path, passphrase=b"s3cret")
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError) as exc_info:
             tasks.load_private_key(str(key_path), passphrase="wrong")
+        assert str(key_path) in str(exc_info.value)
+
+    def test_garbage_file_raises_helpful_error(self, tmp_path):
+        bad_path = tmp_path / "not_a_key.p8"
+        bad_path.write_text("this is not a PEM file")
+        with pytest.raises(ValueError) as exc_info:
+            tasks.load_private_key(str(bad_path))
+        assert "Could not load private key" in str(exc_info.value)
+        assert str(bad_path) in str(exc_info.value)
+
+    def test_public_key_file_raises_error_naming_the_actual_problem(self, tmp_path):
+        # Pointing SNOWFLAKE_PRIVATE_KEY_PATH at the .pub file instead of the
+        # private key is a real, easy mistake — the error should say so.
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        public_pem = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        pub_path = tmp_path / "key.pub"
+        pub_path.write_bytes(public_pem)
+        with pytest.raises(ValueError) as exc_info:
+            tasks.load_private_key(str(pub_path))
+        assert "PUBLIC KEY" in str(exc_info.value)
+
+    def test_empty_file_raises_helpful_error(self, tmp_path):
+        empty_path = tmp_path / "empty.p8"
+        empty_path.write_bytes(b"")
+        with pytest.raises(ValueError) as exc_info:
+            tasks.load_private_key(str(empty_path))
+        assert "empty file" in str(exc_info.value)
 
 
 class TestBuildSql:

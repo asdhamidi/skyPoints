@@ -18,14 +18,41 @@ USA_COLUMNS = ["id", "name", "tier_code", "enrollment_date", "flight_date"]
 
 def load_private_key(key_path: str, passphrase: str | None = None) -> bytes:
     """Loads a PEM private key and re-serializes it to the DER/PKCS8 bytes
-    snowflake-connector-python's `private_key` parameter expects."""
+    snowflake-connector-python's `private_key` parameter expects.
+
+    cryptography's own error for any parse failure is the same generic
+    "Could not deserialize key data..." regardless of cause (empty/corrupted
+    file, wrong file entirely, or a passphrase mismatch), which makes the
+    three most common real mistakes indistinguishable from the raw exception.
+    Wrapped here with the file's own first line shown, since that alone
+    usually reveals which one it is (a public key's header, an encrypted
+    key's header, or a plainly non-PEM file)."""
     from cryptography.hazmat.primitives import serialization
 
     with open(key_path, "rb") as f:
+        pem_data = f.read()
+
+    if not pem_data:
+        raise ValueError(f"Private key file is an empty file: {key_path}")
+
+    try:
         private_key = serialization.load_pem_private_key(
-            f.read(),
+            pem_data,
             password=passphrase.encode() if passphrase else None,
         )
+    except (ValueError, TypeError) as e:
+        first_line = pem_data.splitlines()[0].decode(errors="replace")
+        raise ValueError(
+            f"Could not load private key from {key_path} (first line: {first_line!r}). "
+            "Common causes: (1) the file is empty/corrupted — regenerate it with the "
+            "piped openssl command in setup/snowflake_bootstrap.sql §8, never writing "
+            "the same file as both -in and -out; (2) the key is encrypted but "
+            "SNOWFLAKE_PRIVATE_KEY_PASSPHRASE is blank, or vice versa — "
+            "'BEGIN ENCRYPTED PRIVATE KEY' needs a passphrase, 'BEGIN PRIVATE KEY' does "
+            "not; (3) SNOWFLAKE_PRIVATE_KEY_PATH points at the .pub file instead of the "
+            "private key (its first line would read 'BEGIN PUBLIC KEY')."
+        ) from e
+
     return private_key.private_bytes(
         encoding=serialization.Encoding.DER,
         format=serialization.PrivateFormat.PKCS8,
