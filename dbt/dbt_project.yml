@@ -24,4 +24,4 @@ models:
 
 seeds:
   skypoints:
-    +schema: seeds
+    +quote_columns: false

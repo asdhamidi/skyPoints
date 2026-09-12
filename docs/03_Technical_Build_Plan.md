@@ -73,6 +73,7 @@ skyPoints/
 │   ├── models/
 │   │   ├── staging/
 │   │   │   ├── _staging__sources.yml
+│   │   │   ├── _staging__models.yml
 │   │   │   ├── stg_member_profile_aus.sql
 │   │   │   ├── stg_member_profile_ind.sql
 │   │   │   ├── stg_member_profile_usa.sql
@@ -87,7 +88,9 @@ skyPoints/
 │   ├── macros/
 │   │   ├── generate_country_tables.sql
 │   │   ├── calculate_age.sql
-│   │   └── is_stale_member.sql
+│   │   ├── is_stale_member.sql
+│   │   ├── extract_feed_date.sql
+│   │   └── parse_usa_date.sql
 │   └── tests/singular/
 │       ├── assert_member_key_unique.sql
 │       ├── assert_country_code_is_valid.sql
@@ -126,8 +129,11 @@ skyPoints/
 | `dbt/seeds/tier_reference.csv` | dbt seed | Reference list of valid tier codes | — | `SEEDS.TIER_REFERENCE` |
 | `stg_member_profile_aus.sql` | dbt model | Harmonizes `RAW.AUS_MEMBER_PROFILE` into the canonical schema; `TRY_TO_DATE` handling for `"NULL"`/invalid strings | `RAW.AUS_MEMBER_PROFILE` | canonical-shape rows, `country_code='AUS'` |
 | `stg_member_profile_ind.sql` | dbt model | Harmonizes `RAW.IND_MEMBER_PROFILE`; parses `M/D/YYYY`; maps `Individual or Corporate` → `membership_type` | `RAW.IND_MEMBER_PROFILE` | canonical-shape rows, `country_code='IND'` |
-| `stg_member_profile_usa.sql` | dbt model | Harmonizes `RAW.USA_MEMBER_PROFILE`; parses concatenated dates deterministically only, quarantines ambiguous ones; `dob` always `NULL` | `RAW.USA_MEMBER_PROFILE` | canonical-shape rows, `country_code='USA'` |
+| `stg_member_profile_usa.sql` | dbt model | Harmonizes `RAW.USA_MEMBER_PROFILE`; parses concatenated dates deterministically only (via `parse_usa_date`), quarantines ambiguous ones to `NULL`; `dob` always `NULL` | `RAW.USA_MEMBER_PROFILE` | canonical-shape rows, `country_code='USA'` |
 | `stg_member_profile.sql` | dbt model | `UNION ALL` of the three source-specific models | the three models above | `STAGING.MEMBER_PROFILE` |
+| `extract_feed_date.sql` (macro) | dbt macro | Extracts the business `feed_date` from a source file name (e.g. `aus_member_20240115.csv`) | `source_file_name` | `feed_date` |
+| `parse_usa_date.sql` (macro) | dbt macro | Parses USA's concatenated digit-string dates; resolves to `NULL` (not a guess) when two calendar-valid splits exist | raw digit string | `DATE` or `NULL` |
+| `_staging__models.yml` | dbt schema tests | `not_null`/`unique` on `member_key`; `not_null` on `member_id`, `member_name`, `enrollment_date`, `country_code` | staging models | pass/fail |
 | `stg_redemptions.sql` | dbt model | Flattens `RAW.REDEMPTION_FEED.payload:redemptions` via `LATERAL FLATTEN` | `RAW.REDEMPTION_FEED` | `STAGING.REDEMPTIONS` |
 | `snap_member_country.sql` | dbt snapshot | SCD2 history of tracked attributes (`tier_code`, `last_flight_date`, `is_active`) per `member_key` — not `country_code`, which is fixed by construction (see `docs/01` §3, §7) | `STAGING.MEMBER_PROFILE` | `SNAPSHOTS.SNAP_MEMBER_COUNTRY` |
 | `int_member_profile_final.sql` | dbt model | Current-country resolution: snapshot rows where `dbt_valid_to IS NULL` | snapshot | one current row per `member_key` |

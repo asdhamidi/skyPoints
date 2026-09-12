@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: raw
+    database: SKYPOINTS
+    schema: RAW
+    description: RAW layer — one string-typed table per source (docs/01_Design_Specification.md §5), DDL in setup/raw_tables.sql.
+    tables:
+      - name: aus_member_profile
+      - name: ind_member_profile
+      - name: usa_member_profile
+      - name: redemption_feed
