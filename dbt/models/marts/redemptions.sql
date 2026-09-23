@@ -18,15 +18,21 @@
   matching member profile arrives on a subsequent day — gets re-evaluated
   rather than stuck with its first-seen classification forever.
 #}
-
-{{ config(materialized='incremental', unique_key='txn_id') }}
+{{ config(
+    materialized='incremental',
+    unique_key='txn_id',
+    strategy='merge'
+) }}
 
 with redemptions as (
 
-    select * from {{ ref('stg_redemptions') }}
+    select * 
+    from {{ ref('stg_redemptions') }}
 
     {% if is_incremental() %}
+    -- Pull new records OR previously unresolved records to re-evaluate them
     where load_ts > (select coalesce(max(load_ts), '1900-01-01'::timestamp_ntz) from {{ this }})
+       or txn_id in (select txn_id from {{ this }} where match_status != 'RESOLVED')
     {% endif %}
 
 ),
@@ -50,8 +56,6 @@ match_summary as (
 
 resolved_match as (
 
-    -- one row per member_id, only where exactly one country matched;
-    -- max() here is a no-op tie-breaker since the group is a single row
     select
         member_id,
         max(member_key)   as member_key,
